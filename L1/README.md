@@ -22,3 +22,7 @@ Pozostałe sześć plików `.c` pochodzi z tutorialu lub ćwiczeń własnych. Ni
 | `practice/vodd.c` | `sopy1/vodd.c` | Ćwiczenie z tworzenia katalogu i uprawnień |
 
 Wśród plików źródłowych nie było osobnego `l1-1.c`. Plik `practice/prog1b.c` zawiera podobną funkcję `scan_dir()`, ale jego `main()` wykonuje inne ćwiczenia.
+
+## Dokumentacja funkcji
+
+Opis [funkcji zdefiniowanych w plikach](funkcje/README.md) jest oddzielony od dokumentów o [`errno` i obsłudze błędów](funkcje/errno.md), [funkcjach POSIX i C](funkcje/posix.md) oraz [łańcuchach znaków](funkcje/stringi.md). Dokumentacja obejmuje też funkcje wymienione na stronie tutorialu L1, których nie ma w lokalnych plikach.
