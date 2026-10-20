@@ -1,6 +1,6 @@
 # Funkcje użyte w plikach L1
 
-Ten dokument opisuje funkcje zdefiniowane w aktualnych 11 plikach `.c`. Funkcje biblioteczne użyte w tych plikach oraz dodatkowe funkcje z laboratorium opisano w dokumentach tematycznych poniżej. Opisy dotyczą **obecnej wersji kodu**. „`void`” oznacza brak wartości zwracanej, a nie gwarancję sukcesu. Funkcje mogą wypisać wynik, zmienić plik lub katalog roboczy albo zakończyć proces przez makro `ERR`.
+Ten dokument opisuje funkcje zdefiniowane w aktualnych 12 plikach `.c`. Funkcje biblioteczne użyte w tych plikach oraz dodatkowe funkcje z laboratorium opisano w dokumentach tematycznych poniżej. Opisy dotyczą **obecnej wersji kodu**. „`void`” oznacza brak wartości zwracanej, a nie gwarancję sukcesu. Funkcje mogą wypisać wynik, zmienić plik lub katalog roboczy albo zakończyć proces przez makro `ERR`.
 
 
 ## Spis dokumentacji
@@ -52,11 +52,20 @@ W tabelach „błąd” opisuje to, **co robi obecny kod**, a nie jednolitą kon
 | Funkcja | Parametry i działanie | Zwraca; błędy i `errno` |
 | --- | --- | --- |
 | `join_paths(const char *path1, const char *path2)` | Łączy dwie części ścieżki, wstawiając `/`, jeśli potrzeba. | Nowy `char *`; wywołujący musi użyć `free()`. Przy nieudanym `malloc()` makro `ERR` kończy proces; funkcja nie zwraca `NULL`. |
-| `usage(int argc, char **argv)` | Wypisuje składnię programu. | `void`, ale kończy proces przez `exit(EXIT_FAILURE)`; nie wraca. Nie jest wywoływana z `main()`. |
-| `seek_(char *dirname, char *title2, char *genre2)` | Czyta metadane z pliku `dirname`, wypisuje autora, tytuł i gatunek oraz kopiuje dwa ostatnie do buforów. | `void`; `fopen()` lub `fclose()` może doprowadzić do `ERR`. Brak pola nie jest błędem `errno`. Bufory wyjściowe nie mają przekazanych rozmiarów. |
-| `recursivesearch(char *dir, char *linpath, char *pathtofile, char *linpathtitle, char *linpathgenre)` | Rekurencyjnie przegląda `dir`, buduje ścieżki i tworzy dowiązania w indeksach. | `void`; przy błędach `opendir()`, `lstat()`, `symlink()` lub `closedir()` kończy proces przez `ERR`. Pojedyncze `readdir() == NULL` wymaga rozróżnienia końca od błędu. |
-| `Recursie_search()` | Tworzy `index` i podkatalogi indeksów, po czym wywołuje `recursivesearch()`. | `void`; niektóre błędy `mkdir()` i `chdir()` kończą proces. Istniejący `index` jest tu błędem (`EEXIST`). |
-| `main(int argc, char **argv)` | Sprawdza możliwość wejścia do `library` i uruchamia tworzenie indeksów. | `int`: `EXIT_SUCCESS` lub zakończenie przez `ERR`. Argumenty `argc` i `argv` obecnie nie sterują działaniem. |
+| `usage(const char *program)` | Wypisuje składnię z opcjonalną ścieżką bazy. | `void`, ale kończy proces przez `exit(EXIT_FAILURE)`; wywoływana przy nadmiarowych argumentach. |
+| `seek_(const char *pathname, char title[65], char genre[65])` | Czyta metadane, zapisuje tytuł i gatunek bez końcowych znaków nowej linii, przycinając je do 64 bajtów. | `void`; błędy `fopen()`, `getline()` i `fclose()` prowadzą do `ERR`. Brak pola pozostawia pusty łańcuch. |
+| `recursivesearch(const char *directory_path, const char *relative_path)` | Rekurencyjnie przegląda bibliotekę i tworzy dowiązania w trzech indeksach, w tym podkatalogi gatunków. | `void`; błędy operacji katalogowych i `symlink()` prowadzą do `ERR`. Zeruje `errno` przed każdym `readdir()`. |
+| `Recursie_search(void)` | Tworzy `index` i jego podkatalogi, po czym wywołuje `recursivesearch()`. | `void`; każdy błąd `mkdir()` kończy proces. Istniejący `index` jest błędem (`EEXIST`). |
+| `main(int argc, char **argv)` | Sprawdza `library`, tworzy indeksy, a przy jednym argumencie uruchamia `verify_database()`. | `int`: `EXIT_SUCCESS` przy zgodności lub bez bazy, `EXIT_FAILURE` przy różnicach albo błędach. |
+
+### Zadanie 4, osobny moduł etapu 4 — [`etap-4.c`](../zadanie-4/etap-4.c)
+
+| Funkcja | Parametry i działanie | Zwraca; błędy i `errno` |
+| --- | --- | --- |
+| `read_record(int fd, struct book_record *record)` | Statyczna funkcja czytająca pełne 68 bajtów przez `readv()`, także gdy odczyt jest krótki; `fd` to deskryptor bazy. | `0` przy pełnym rekordzie, `-1` po błędzie `readv()`, `-2` po przedwczesnym końcu danych. |
+| `valid_title(const char title[65])` | Sprawdza, czy tytuł jest niepustą bezpieczną nazwą pliku i czy krótsze pole dopełniono zerami. | `1` przy poprawnym tytule, `0` przy niepoprawnym; nie używa `errno`. |
+| `index_path(const char *dir, const char *title)` | Przydziela ścieżkę `dir/title`. | Nowy `char *` do zwolnienia przez `free()` albo `NULL` po błędzie alokacji; wtedy `errno`. |
+| `verify_database(const char *database_path, const char *by_title_dir)` | Sprawdza format bazy i wszystkie rekordy względem dowiązań w `by-title`. | `0` przy zgodności, `1` gdy są braki lub różnice rozmiaru, `-1` przy błędzie odczytu albo formatu; wypisuje odpowiednie komunikaty. |
 
 ### Tutorial — [`l1-2.c`](../tutorial/attempts/l1-2.c)
 

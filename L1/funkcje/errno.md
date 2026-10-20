@@ -79,6 +79,12 @@ if (stat(path, &st) == -1) {
 
 `access()` także zwraca `0` lub `-1`, ale wynik jest tylko bieżącą informacją o dostępie. Między `access()` a późniejszym `fopen()` stan pliku może się zmienić; zawsze sprawdzaj również wynik otwarcia.
 
+### Odczyt bazy w etapie 4
+
+`readv()` zwraca liczbę odczytanych bajtów. `-1` oznacza błąd i pozwala sprawdzić `errno`; `0` oznacza koniec danych, a dodatni wynik mniejszy od żądanej liczby bajtów wymaga kolejnego odczytu. W [`etap-4.c`](../zadanie-4/etap-4.c) pętla składa pełny 68-bajtowy rekord. Przedwczesny koniec rekordu jest błędem **formatu bazy**, a nie kodem `errno`.
+
+Przy sprawdzaniu `index/by-title` wynik `stat() == -1` z `errno == ENOENT` oznacza brak książki lub zerwane dowiązanie. Pozostałe błędy `stat()` są zgłaszane jako błędy operacji na pliku.
+
 ### Błędy argumentów i błędy systemowe
 
 `getopt()` sygnalizuje nieznaną opcję najczęściej znakiem `'?'`, a nie przez `errno`. Podobnie `getenv() == NULL` oznacza brak zmiennej. W takich przypadkach wypisz własny komunikat, np. `fprintf(stderr, "Brak opcji -p\n")`.

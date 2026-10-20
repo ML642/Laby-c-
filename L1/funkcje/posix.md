@@ -6,7 +6,7 @@
 
 Każda funkcja poniżej występuje w co najmniej jednym pliku `.c`. Kolumna „Wynik / błąd” podaje warunek, który należy sprawdzić przed odczytaniem `errno`. Podane przykłady błędów są praktyczne, a nie pełną listą dopuszczalnych kodów.
 
-Funkcje występujące wyłącznie na [stronie tutorialu L1](https://sop.mini.pw.edu.pl/pl/sop1/lab/l1/) są zebrane w osobnej tabeli poniżej. Funkcje tekstowe opisano w [Łańcuchach znaków](stringi.md).
+Funkcje niewywoływane w lokalnych plikach, lecz wymienione na [stronie tutorialu L1](https://sop.mini.pw.edu.pl/pl/sop1/lab/l1/), są zebrane w osobnej tabeli poniżej. Funkcje tekstowe opisano w [Łańcuchach znaków](stringi.md).
 
 ### Katalogi, ścieżki, pliki i uprawnienia
 
@@ -16,6 +16,7 @@ Funkcje występujące wyłącznie na [stronie tutorialu L1](https://sop.mini.pw.
 | `readdir(dir)` | Pobiera następny wpis katalogu. | `struct dirent *` albo `NULL`. `NULL` oznacza koniec **lub** błąd: ustaw `errno = 0` przed wywołaniem, potem sprawdź `errno`. |
 | `closedir(dir)` | Zamyka strumień katalogu. | `0` albo `-1`; po `-1` sprawdź `errno`. |
 | `lstat(path, &st)` | Pobiera dane o obiekcie, bez podążania za końcowym dowiązaniem symbolicznym. | `0` albo `-1`; po `-1` sprawdź `errno`. |
+| `stat(path, &st)` | Pobiera dane obiektu, podążając za końcowym dowiązaniem symbolicznym. Etap 4 sprawdza nim plik przez `by-title`. | `0` albo `-1`; `ENOENT` po `-1` może oznaczać brak książki. |
 | `S_ISDIR(mode)`, `S_ISREG(mode)`, `S_ISLNK(mode)` | Sprawdzają typ z `st_mode`. | Wynik logiczny; to **makra**, nie funkcje, i nie zgłaszają błędu przez `errno`. |
 | `getcwd(buf, size)` | Zapisuje ścieżkę bieżącego katalogu. | Zwraca `buf` albo `NULL`; po `NULL` sprawdź `errno` (np. `ERANGE` przy zbyt małym buforze). |
 | `chdir(path)` | Zmienia katalog roboczy procesu. | `0` albo `-1`; po `-1` sprawdź `errno`. |
@@ -26,6 +27,15 @@ Funkcje występujące wyłącznie na [stronie tutorialu L1](https://sop.mini.pw.
 | `unlink(path)` | Usuwa nazwę pliku lub dowiązania. | `0` albo `-1`; `ENOENT` oznacza brak wskazanej ścieżki. |
 | `umask(mask)` | Ustawia maskę uprawnień nowych plików w procesie. | Zwraca **poprzednią maskę**; nie zgłasza błędu przez `errno`. |
 
+### Deskryptory i baza binarna
+
+| Funkcja | Co robi | Wynik / błąd i `errno` |
+| --- | --- | --- |
+| `open(path, O_RDONLY)` | Otwiera bazę do odczytu i zwraca deskryptor. | Nieujemny deskryptor albo `-1`; po `-1` sprawdź `errno`. |
+| `fstat(fd, &st)` | Odczytuje rozmiar i typ już otwartego pliku bazy. | `0` albo `-1`; po `-1` sprawdź `errno`. |
+| `readv(fd, iov, count)` | Czyta dane do kilku buforów `struct iovec`; etap 4 rozdziela rozmiar i tytuł rekordu. | Liczba bajtów, `0` przy końcu albo `-1` przy błędzie. Krótki odczyt jest możliwy; po `-1` sprawdź `errno`. |
+| `close(fd)` | Zamyka deskryptor bazy. | `0` albo `-1`; po `-1` sprawdź `errno`. |
+
 ### Strumienie `FILE *` i formatowany tekst
 
 | Funkcja | Co robi | Wynik / błąd i `errno` |
@@ -35,6 +45,7 @@ Funkcje występujące wyłącznie na [stronie tutorialu L1](https://sop.mini.pw.
 | `fseek(file, offset, whence)` | Przesuwa pozycję w strumieniu. | `0` przy sukcesie; wartość różna od `0` przy błędzie (`-1` w POSIX), wtedy sprawdź `errno`. |
 | `ftell(file)` | Odczytuje bieżącą pozycję. | `long` z pozycją albo `-1L`; po `-1L` sprawdź `errno`. |
 | `fgets(buf, size, file)` | Czyta najwyżej `size-1` znaków i dodaje `'\0'`. | `buf` albo `NULL`; `NULL` to koniec lub błąd. Rozróżnij przez `feof()` i `ferror()`. |
+| `getline(&line, &capacity, file)` | Czyta cały wiersz, w razie potrzeby przydzielając lub powiększając bufor; wywołujący zwalnia `line`. | Liczba bajtów albo `-1`; po `-1` rozróżnij koniec od błędu przez `feof()` i `ferror()`. |
 | `fscanf(file, format, ...)` | Czyta i konwertuje dane według formatu. | Liczba przypisań, `0` przy niedopasowaniu albo `EOF` przy końcu/błędzie przed pierwszym przypisaniem. Przy `EOF` sprawdź `feof()`/`ferror()`. |
 | `fread(buf, size, count, file)` | Czyta do `count` elementów po `size` bajtów. | Liczba **pełnych elementów**; wynik mniejszy niż `count` wymaga `feof()`/`ferror()`. Przy błędzie odczytu POSIX ustawia `errno`. |
 | `fwrite(buf, size, count, file)` | Zapisuje `count` elementów. | Liczba zapisanych elementów; mniej niż `count` oznacza błąd zapisu, sprawdź `ferror()` i `errno`. |
@@ -43,6 +54,7 @@ Funkcje występujące wyłącznie na [stronie tutorialu L1](https://sop.mini.pw.
 | `sprintf(buf, format, ...)` | Zapisuje sformatowany tekst do tablicy. | Liczba znaków albo wartość ujemna; **nie zna rozmiaru bufora**, więc za mała tablica powoduje przepełnienie. Użyj `snprintf()` z rozmiarem. |
 | `feof(file)` | Sprawdza wskaźnik końca strumienia. | Niezerowe: osiągnięto koniec; `0`: nie. Samo `feof()` nie zgłasza błędu przez `errno`. |
 | `ferror(file)` | Sprawdza wskaźnik błędu strumienia. | Niezerowe: wystąpił błąd I/O; `0`: brak ustawionego wskaźnika błędu. |
+| `fflush(file)` | Przekazuje buforowane dane wyjściowe strumienia do warstwy systemowej. | `0` albo `EOF`; po `EOF` sprawdź `errno`. |
 | `perror(prefix)` | Wypisuje na stderr `prefix` i tekst bieżącego `errno`. | `void`. Używaj bezpośrednio po funkcji, której wynik potwierdził błąd. |
 
 Przykład `prog13.c` z tutorialu pokazuje, że `printf()` może zatrzymać dane w buforze, szczególnie gdy stdout jest przekierowane do pliku. Komunikaty diagnostyczne wypisuj przez `fprintf(stderr, ...)`; po zapisie do pliku sprawdzaj także wynik `fclose()`.
@@ -64,11 +76,10 @@ Przykład `prog13.c` z tutorialu pokazuje, że `printf()` może zatrzymać dane 
 
 ## Dodatkowe funkcje z tutorialu L1
 
-Poniższych funkcji bibliotecznych nie wywołuje żaden z lokalnych 11 plików `.c`. Są wymienione lub użyte na głównej stronie laboratorium. Tutorial odsyła również do stron manuala `fdopendir()` i `fstatat()`, chociaż objaśnia tam głównie `opendir()`, `stat()` i `lstat()`.
+Poniższych funkcji bibliotecznych nie wywołuje żaden z lokalnych 12 plików `.c`. Są wymienione lub użyte na głównej stronie laboratorium. Tutorial odsyła również do stron manuala `fdopendir()` i `fstatat()`, chociaż objaśnia tam głównie `opendir()`, `stat()` i `lstat()`.
 
 | Funkcja i nagłówek | Co robi | Zwraca; błąd i `errno` |
 | --- | --- | --- |
-| `stat(path, &st)` — `<sys/stat.h>` | Odczytuje dane obiektu; dla dowiązania symbolicznego opisuje jego **cel**. `lstat()` opisuje samo dowiązanie. | `0` albo `-1`; po `-1` sprawdź `errno`. |
 | `fdopendir(fd)` — `<dirent.h>` | Tworzy strumień katalogu z otwartego deskryptora; po sukcesie strumień przejmuje deskryptor, który zamyka `closedir()`. | `DIR *` albo `NULL`; po `NULL` sprawdź `errno` i sam zamknij nadal posiadany deskryptor. |
 | `fstatat(fd, path, &st, flags)` — `<sys/stat.h>` | Odczytuje atrybuty względem katalogu wskazanego deskryptorem; z `AT_SYMLINK_NOFOLLOW` opisuje sam symlink. | `0` albo `-1`; po `-1` sprawdź `errno`. |
 | `fgetc(file)` — `<stdio.h>` | Czyta jeden znak ze strumienia. | Odczytany znak jako `unsigned char` zamieniony na `int` albo `EOF`; po `EOF` odróżnij koniec od błędu przez `feof()` i `ferror()`. |
@@ -81,12 +92,7 @@ Poniższych funkcji bibliotecznych nie wywołuje żaden z lokalnych 11 plików `
 
 Własne funkcje z kodów tutorialu, takie jak `scan_dir()`, `usage()` i `make_file()`, opisano w [spisie funkcji z plików](README.md).
 
-W [przykładowym zadaniu 4](https://sop.mini.pw.edu.pl/pl/sop1/lab/l1/example4/) pojawiają się ponadto:
-
-| Funkcja i nagłówek | Co robi | Zwraca; błąd i `errno` |
-| --- | --- | --- |
-| `getline(&line, &capacity, file)` — `<stdio.h>` | Czyta cały wiersz, w razie potrzeby przydzielając lub powiększając bufor. Właścicielem `line` pozostaje wywołujący, który zwalnia go przez `free()`. | Liczba przeczytanych bajtów, także końcowy znak nowej linii, albo `-1`. Po `-1` sprawdź `feof()` i `ferror()`, aby odróżnić koniec pliku od błędu. |
-| `readv(fd, iov, count)` — `<sys/uio.h>` | Odczytuje dane z deskryptora do wielu buforów opisanych przez `struct iovec`. | Liczba przeczytanych bajtów, `0` przy końcu danych albo `-1` przy błędzie; po `-1` sprawdź `errno`. Krótki odczyt jest możliwy. |
+`getline()` i `readv()`, wskazane w [przykładowym zadaniu 4](https://sop.mini.pw.edu.pl/pl/sop1/lab/l1/example4/), są teraz użyte w lokalnym rozwiązaniu i opisane wyżej.
 
 ## Źródła do sprawdzania szczegółów
 

@@ -1,266 +1,247 @@
-#define _XOPEN_SOURCE 700
 #define _POSIX_C_SOURCE 200809L
 
+#include "etap-4.h"
 
 #include <dirent.h>
 #include <errno.h>
-#include <fcntl.h>
-#include <ftw.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/stat.h>
-//#include <sys/uio.h>
-#include <unistd.h>
 #include <unistd.h>
 
 #define ERR(source) (perror(source), fprintf(stderr, "%s:%d\n", __FILE__, __LINE__), exit(EXIT_FAILURE))
 
-// join 2 path. returned pointer is for newly allocated memory and must be freed
-char* join_paths(const char* path1, const char* path2)
+enum { MAX_TITLE = 64 };
+
+/* Wynik jest nowym blokiem pamięci; wywołujący zwalnia go przez free(). */
+char *join_paths(const char *path1, const char *path2)
 {
-    char* res;
-    const int l1 = strlen(path1);
-    if (path1[l1 - 1] == '/')
-    {
-        res = malloc(strlen(path1) + strlen(path2) + 1);
-        if (!res)
-            ERR("malloc");
-        strcpy(res, path1);
+    size_t first = strlen(path1);
+    size_t second = strlen(path2);
+    int separator = first != 0 && path1[first - 1] != '/';
+
+    if (second > SIZE_MAX - 2 || first > SIZE_MAX - second - 2) {
+        errno = ENOMEM;
+        ERR("join_paths");
     }
-    else
-    {
-        res = malloc(strlen(path1) + strlen(path2) + 2);  // additional space for "/"
-        if (!res)
-            ERR("malloc");
-        strcpy(res, path1);
-        res[l1] = '/';
-        res[l1 + 1] = 0;
-    }
-    return strcat(res, path2);
+    char *result = malloc(first + second + 2);
+    if (result == NULL)
+        ERR("malloc");
+    memcpy(result, path1, first);
+    if (separator)
+        result[first++] = '/';
+    memcpy(result + first, path2, second + 1);
+    return result;
 }
 
-void usage(int argc, char** argv)
+void usage(const char *program)
 {
-    (void)argc;
-    fprintf(stderr, "USAGE: %s path\n", argv[0]);
+    fprintf(stderr, "USAGE: %s [database]\n", program);
     exit(EXIT_FAILURE);
 }
 
-void seek_(char* dirname,char* title2, char *genre2){
-    FILE* fl = fopen(dirname,"r");
-    
-    if(fl == NULL){
+/* Czyta tytuł i gatunek. Wartości są obcinane do 64 bajtów, jak nazwy w indeksie. */
+void seek_(const char *pathname, char title[MAX_TITLE + 1], char genre[MAX_TITLE + 1])
+{
+    FILE *file = fopen(pathname, "r");
+    if (file == NULL)
         ERR("fopen");
-    }
 
-    char author[500];
-    int author1 = 0;
-    char title[500];
-    int title1 = 0;
-    char genre[500];
-    int genre1 = 0;
+    char *line = NULL;
+    size_t capacity = 0;
+    ssize_t length;
+    title[0] = '\0';
+    genre[0] = '\0';
 
-    char c[500];
-    // fgets copies with \n
-    while(fgets(c,500,fl)!=NULL){
-        char *r = NULL;
-        char s[500];
-        char val[500];
-
-        //now r points to the :
-
-        r = strchr(c,':');
-        if(r == NULL){
-            perror("THe line does not contain :");
+    while ((length = getline(&line, &capacity, file)) != -1) {
+        char *colon = strchr(line, ':');
+        if (colon == NULL)
             continue;
+        size_t key_length = (size_t)(colon - line);
+        char *value = colon + 1;
+        size_t value_length = (size_t)(line + length - value);
+        while (value_length > 0 &&
+               (value[value_length - 1] == '\n' || value[value_length - 1] == '\r'))
+            value_length--;
+        if (value_length > MAX_TITLE)
+            value_length = MAX_TITLE;
+
+        char *destination = NULL;
+        if (key_length == 5 && memcmp(line, "title", 5) == 0)
+            destination = title;
+        else if (key_length == 5 && memcmp(line, "genre", 5) == 0)
+            destination = genre;
+        if (destination != NULL) {
+            memcpy(destination, value, value_length);
+            destination[value_length] = '\0';
         }
-        //coping before the array
-        strncpy(s,c,r-c);
-        s[r-c] = '\0';
-        //copying after the symbol
-        strcpy(val,r);
-
-        if(strcmp(s,"author")==0){
-            strcpy(author,val+1);
-            author1 = 1;
-        }
-        else if(strcmp(s,"title")==0){
-            strcpy(title,val+1);
-            title1 = 1;
-        }
-         else if(strcmp(s,"genre")==0){
-            strcpy(genre,val+1);
-            genre1 = 1;
-         }
-
-        //printf(" KEY: %s |  VALUE: %s\n",s,val+1);
     }
-    if(author1){
-       // strcpy(author2, author);
 
-        printf("Author : %s",author);
-    }
-    else printf("Author : missing!\n");
-
-    if(title1){
-         strcpy(title2, title);
-        printf("Title : %s",title);
-    }
-    else printf("Title : missing!\n");
-
-    if(genre1){
-        strcpy(genre2,genre);
-        printf("Genre : %s",genre);}
-    else printf("Genre : missing! \n");
-
-    if(fclose(fl)){
+    if (ferror(file))
+        ERR("getline");
+    free(line);
+    if (fclose(file) == EOF)
         ERR("fclose");
-    }
 }
 
-void  recursivesearch(char * dir,char* linpath,char* pathtofile , char* linpathtitle,char* linpathgenre){
-    DIR* directory = opendir(dir);
+void seek_fgets(const char *pathname, char title[MAX_TITLE + 1], char genre[MAX_TITLE + 1])
+{
+    FILE *file = fopen(pathname, "r");
+    if (file == NULL)
+        ERR("fopen");
 
-    if(directory == NULL){
+    char line[1024];
+    title[0] = '\0';
+    genre[0] = '\0';
+
+    while (fgets(line, sizeof(line), file) != NULL) {
+        int has_non_cr_suffix = 0;
+        if (strchr(line, '\n') == NULL) {
+            /* Discard the rest of this line, preserving trailing-CR semantics. */
+            int character;
+            while ((character = fgetc(file)) != EOF && character != '\n') {
+                if (character != '\r')
+                    has_non_cr_suffix = 1;
+            }
+        }
+
+        char *colon = strchr(line, ':');
+        if (colon == NULL)
+            continue;
+        size_t key_length = (size_t)(colon - line);
+        char *value = colon + 1;
+        size_t value_length = strlen(value);
+        while (!has_non_cr_suffix && value_length > 0 &&
+               (value[value_length - 1] == '\n' || value[value_length - 1] == '\r'))
+            value_length--;
+        if (value_length > MAX_TITLE)
+            value_length = MAX_TITLE;
+
+        char *destination = NULL;
+        if (key_length == 5 && memcmp(line, "title", 5) == 0)
+            destination = title;
+        else if (key_length == 5 && memcmp(line, "genre", 5) == 0)
+            destination = genre;
+        if (destination != NULL) {
+            strncpy(destination, value, value_length);
+            destination[value_length] = '\0';
+        }
+    }
+
+    if (ferror(file))
+        ERR("fgets");
+    if (fclose(file) == EOF)
+        ERR("fclose");
+}
+
+void recursivesearch(const char *directory_path, const char *relative_path)
+{
+    DIR *directory = opendir(directory_path);
+    if (directory == NULL)
         ERR("opendir");
-    }
-    struct dirent* rd;
 
-    errno = 0;
-    while((rd = readdir(directory)) != NULL){
-        struct stat st;
-        
-        char buffor[500];
-        char linpath_c[500];
+    for (;;) {
+        errno = 0;
+        struct dirent *entry = readdir(directory);
+        if (entry == NULL) {
+            if (errno != 0)
+                ERR("readdir");
+            break;
+        }
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0)
+            continue;
 
-
-
-        char pathtofile1[500];
-        // copying the files 
-        sprintf(buffor,"%s/%s",dir,rd->d_name);
-        sprintf(linpath_c,"%s/%s",linpath,rd->d_name);
-        sprintf(pathtofile1,"%s/%s",pathtofile,rd->d_name);
-
-        if(lstat(buffor,&st)){
+        char *source = join_paths(directory_path, entry->d_name);
+        char *relative = join_paths(relative_path, entry->d_name);
+        struct stat info;
+        if (lstat(source, &info) == -1)
             ERR("lstat");
-        }
 
-        if(S_ISDIR(st.st_mode) && (strcmp(rd->d_name,".") != 0) && (strcmp(rd->d_name,"..")!=0)){
-            recursivesearch(buffor,linpath,pathtofile1,linpathtitle,linpathgenre);
-        }
-        if(S_ISREG(st.st_mode)){
-            char title[500] = "";
-            char genre[500] = "";
+        if (S_ISDIR(info.st_mode)) {
+            recursivesearch(source, relative);
+        } else if (S_ISREG(info.st_mode)) {
+            char title[MAX_TITLE + 1];
+            char genre[MAX_TITLE + 1];
+            seek_(source, title, genre);
 
-            // char lintitle[500];
-            // char lingenre[500];
-            
-            if(symlink(pathtofile1,linpath_c)){
+            char *visible_target = join_paths("../../library", relative);
+            char *visible_link = join_paths("index/by-visible-title", entry->d_name);
+            if (symlink(visible_target, visible_link) == -1)
                 ERR("symlink");
-            }
-            seek_(buffor,title,genre);
-            
-            if(strlen(title) > 64)
-                title[64] = '\0';
-            if(strlen(genre)>64){
-                genre[64] = '\0';
-            }   
-            char *lintitle = join_paths(linpathtitle, title);
+            free(visible_target);
+            free(visible_link);
 
-            char *lingenre = join_paths(linpathgenre,genre);
-            
-            
-            if(title[0] != '\0'){
-                if(symlink(pathtofile1,lintitle)){
-                ERR("symlink");
+            if (title[0] != '\0') {
+                if (strchr(title, '/') != NULL || !strcmp(title, ".") ||
+                    !strcmp(title, "..")) {
+                    fprintf(stderr, "Niepoprawny tytuł w pliku: %s\n", source);
+                    exit(EXIT_FAILURE);
+                }
+                char *title_link = join_paths("index/by-title", title);
+                char *title_target = join_paths("../../library", relative);
+                if (symlink(title_target, title_link) == -1)
+                    ERR("symlink");
+                free(title_link);
+                free(title_target);
+
+                if (genre[0] != '\0') {
+                    if (strchr(genre, '/') != NULL || !strcmp(genre, ".") ||
+                        !strcmp(genre, "..")) {
+                        fprintf(stderr, "Niepoprawny gatunek w pliku: %s\n", source);
+                        exit(EXIT_FAILURE);
+                    }
+                    char *genre_dir = join_paths("index/by-genre", genre);
+                    if (mkdir(genre_dir, 0777) == -1 && errno != EEXIST)
+                        ERR("mkdir");
+                    char *genre_link = join_paths(genre_dir, title);
+                    char *genre_target = join_paths("../../../library", relative);
+                    if (symlink(genre_target, genre_link) == -1)
+                        ERR("symlink");
+                    free(genre_dir);
+                    free(genre_link);
+                    free(genre_target);
                 }
             }
-            if(genre[0] != '\0'){
-                if(symlink(pathtofile1,lingenre)){
-                ERR("symlink");
-                }
-            }
-            free(lintitle);
-            free(lingenre);
-           
-        }   
-    }
-    if(rd == NULL){
-        if(errno != 0 ){
-            ERR("rd");
         }
-        else{
-            //koniec pliku
-        }
+        free(source);
+        free(relative);
     }
-    if(closedir(directory)){
+    if (closedir(directory) == -1)
         ERR("closedir");
-    }
 }
 
-void Recursie_search(){
-    if(mkdir("index",0777)){
-        if(errno == EEXIST){
-            ERR("CATALOG IS ALREADY HERE");
-        }
-        else{
-            ERR("mkdir");
-        }
-    }
-    
 
-    char buffor[500];
-
-    if(getcwd(buffor,500)==NULL){
-        ERR("getcwd");
-    };
-
-    if(chdir("index")){
-        ERR("chdir");
-    };
-
-    if(mkdir("by-visible-title",0777)){
-        if(errno == EEXIST){
-            ERR("CATALOG IS ALREADY HERE");
-        }
-        else{
-            ERR("mkdir");
-        }
-    }
-    
-    mkdir("by-title", 0777);
-    mkdir("by-genre", 0777);
-
-    if(chdir(buffor)){
-        ERR("chdir");
-    }
-    
-    recursivesearch( "./library",
-    "./index/by-visible-title",
-    "../../library",
-    "./index/by-title",
-    "./index/by-genre");
+void Recursie_search(void)
+{
+    if (mkdir("index", 0777) == -1)
+        ERR("mkdir index");
+    if (mkdir("index/by-visible-title", 0777) == -1)
+        ERR("mkdir by-visible-title");
+    if (mkdir("index/by-title", 0777) == -1)
+        ERR("mkdir by-title");
+    if (mkdir("index/by-genre", 0777) == -1)
+        ERR("mkdir by-genre");
+    recursivesearch("library", "");
 }
 
-int main(int argc, char** argv) {
-    char buffor[500];
+int main(int argc, char **argv)
+{
+    if (argc > 2)
+        usage(argv[0]);
 
-    if(getcwd(buffor,500)== NULL){
-        ERR("getcwd");
+    struct stat library_info;
+    if (stat("library", &library_info) == -1)
+        ERR("stat library");
+    if (!S_ISDIR(library_info.st_mode)) {
+        fprintf(stderr, "library nie jest katalogiem\n");
+        return EXIT_FAILURE;
     }
 
-    if(chdir("library")){
-        ERR("chdir");
-    }
-
-   // seek_(argv[1]);
-    
-    if(chdir(buffor)){
-        ERR("chdir");
-    }
     Recursie_search();
+    if (argc == 2)
+        return verify_database(argv[1], "index/by-title") == 0
+                   ? EXIT_SUCCESS : EXIT_FAILURE;
     return EXIT_SUCCESS;
-
-    //usage(argc, argv);
 }
